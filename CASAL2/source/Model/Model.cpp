@@ -66,8 +66,11 @@ Model::Model() {
   parameters_.Bind<string>(PARAM_INITIALISATION_PHASES, &initialisation_phases_, "Define the labels of the phases of the initialisation", R"(A list of valid labels defined by \texttt{@initialisation_phase})", true);
   parameters_.Bind<string>(PARAM_TIME_STEPS, &time_steps_, "Define the labels of the time steps, in the order that they are applied, to form the annual cycle", R"(A list of valid labels defined by \texttt{@time_step})");
   parameters_.Bind<unsigned>(PARAM_PROJECTION_FINAL_YEAR, &projection_final_year_, "Define the final year of the model in projection mode", R"(Defines the last year of the projection period, i.e., the projection period runs from \texttt{final_year}$+1$ to \texttt{projection_final_year}. For the default, $0$, no projections are run.)", 0);
-  parameters_.Bind<string>(PARAM_TYPE, &type_, "Type of model (the partition structure). Either age, length or hybrid", "", PARAM_AGE);
+  parameters_.Bind<string>(PARAM_TYPE, &type_, "TBA: Type of model (the partition structure). Either age, length or hybrid", "", PARAM_AGE);
   parameters_.Bind<Double>(PARAM_LENGTH_BINS, &length_bins_, "", "", true);
+  parameters_.Bind<string>(PARAM_BASE_UNTIS, &base_weight_units_, "Define the units for the base weight. This will be the default unit of any weight input parameters ", "", PARAM_TONNES)->set_allowed_values({PARAM_GRAMS, PARAM_TONNES,PARAM_KGS});
+
+
 
   global_configuration_ = new GlobalConfiguration();
   managers_ = new Managers(this);
@@ -489,13 +492,12 @@ void Model::RunEstimation() {
     LOG_FINE() << "Model: State change to Iteration Complete";
     managers_->report()->Execute(State::kIterationComplete);
   }
-
-
 }
 
 /**
  *
  */
+
 bool Model::RunMCMC() {
   LOG_FINE() << "Entering the MCMC Sub-System";
   auto mcmc = managers_->mcmc()->active_mcmc();
@@ -584,6 +586,16 @@ void Model::RunProfiling() {
 void Model::RunSimulation() {
   LOG_FINE() << "Entering the Simulation Sub-System";
 
+  Estimables* estimables = managers_->estimables();
+  LOG_FINE() << "estimable values count: " << estimable_values_count_;
+  if (estimable_values_count_ > 1)
+    LOG_FATAL() << "Simulation mode only allows a -i file with one set of parameters.";
+
+  if (estimable_values_file_) {
+    estimables->LoadValues(0);
+    Reset();
+  }
+
   int simulation_candidates = global_configuration_->simulation_candidates();
   if (simulation_candidates < 1) {
     LOG_FATAL() << "The number of simulations specified at the command line parser must be at least one";
@@ -592,7 +604,9 @@ void Model::RunSimulation() {
   for (int i = 0; i < simulation_candidates; ++i) {
     string report_suffix = ".";
     unsigned iteration_width = (unsigned)floor(log10(i + 1)) + 1;
-    report_suffix.append("0", suffix_width - iteration_width);
+
+    unsigned diff = suffix_width - iteration_width;
+    report_suffix.append(diff,'0');
     report_suffix.append(utilities::ToInline<unsigned, string>(i + 1));
     managers_->report()->set_report_suffix(report_suffix);
 
